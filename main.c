@@ -3,20 +3,15 @@
  *****************************************************************************/
 #include <stdio.h>
 #include "imgproc.h"
-#define IMG_HEIGHT 1080
-#define IMG_WIDTH  1920
-void main( int argc, char **argv )
+/*********************************
+* this function can split one yuv file to separate frames, from 1 to total n*um 1.yuv ,2.yuv .....total.yuv
+***********************************************/
+void splitYUV(char* yuvfile,int width,int height)
 {
-    int width, height;
     unsigned char *luma_y, *chroma_u, *chroma_v;
-    unsigned char srcfile[20] ;
+    unsigned char srcfile[20] ;//output file name
     int i_frame = 1;
-    if( !(argc > 1)) printf("Example usage: main 352x288 input.yuv output.yuv\n" );
-    if( 2 != sscanf( argv[1], "%dx%d", &width, &height )) printf("resolution not specified or incorrect\n" );
-
-    printf("%d\n",width );
-    printf("%d\n",height );
-    FILE *Filein = fopen (argv[2], "rb");
+    FILE *Filein = fopen (yuvfile, "rb");
     if (Filein == NULL) printf ("Unable to open source sequence file!\n");
     int luma_size =  width * height;
     int chroma_size =  luma_size/4;
@@ -46,4 +41,36 @@ void main( int argc, char **argv )
     free(luma_y);
     free(chroma_u);
     free(chroma_v);
+}
+
+void main( int argc, char **argv )
+{
+    int width, height;
+    if( !(argc > 1)) printf("Example usage: main 352x288 input.yuv output.yuv\n" );
+    if( 2 != sscanf( argv[1], "%dx%d", &width, &height )) printf("resolution not specified or incorrect\n" );
+
+    printf("%d\n",width );
+    printf("%d\n",height );
+
+    unsigned char *src_y = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH*sizeof(unsigned char ));
+    unsigned char *dst_y = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH*sizeof(unsigned char ));
+    int luma_size =  width * height;
+    FILE *Filein = fopen (argv[2], "rb");
+    FILE *Fileout = fopen (argv[3], "rb");
+    if (Fileout == NULL) printf ("Unable to open output sequence file!\n");
+    if (Filein == NULL) printf ("Unable to open source sequence file!\n");
+
+// loop to process every frame
+
+    if( fread( src_y, 1, luma_size, Filein ) != luma_size )
+        break;
+    genDiff( dst_y , src_y , width, width, height );
+    fwrite( dst_y, 1, luma_size, Fileout );
+
+//end loop
+//release ;clean
+    fclose(Filein);
+    fclose(Fileout);
+    free( src_y );
+    free( dst_y );
 }
