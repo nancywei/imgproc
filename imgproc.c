@@ -11,6 +11,115 @@
 #include <stdio.h>
 
 
+
+void yajie_print(int type,void *ptr,int w,int h,int stride,char *info)
+{
+	static int cabac_cnt=0;
+	static int block=0;
+	static int mbnum=0;
+	int *ptr32 = (int*)ptr;
+	short *ptr16 = (short*)ptr;
+	unsigned char *ptr8=(unsigned char*)ptr;
+	int i,j;
+	static FILE *fp=0;
+	if (fp==0){
+		fp = fopen("../svac_fast.txt","w");
+	}
+	switch(type){
+		case 1:
+			fprintf(fp,"%s %d %d\n",info,mbnum,block);
+			for (i=0;i<h;i++){
+				for (j=0;j<w;j++){
+					unsigned char tmp = ptr32[i*stride+j];
+					fprintf(fp,"%02x ",tmp);
+				}
+				fprintf(fp,"\n");
+			}
+			fflush(fp);
+			break;
+		case 168:
+			fprintf(fp,"%s %d %d\n",info,mbnum,block);
+			for (i=0;i<h;i++){
+				for (j=0;j<w;j++){
+					unsigned char tmp = ptr16[i*stride+j];
+					fprintf(fp,"%02x ",tmp);
+				}
+				fprintf(fp,"\n");
+			}
+			fflush(fp);
+			break;
+		case 2:
+			fprintf(fp,"%s %d %d\n",info,mbnum,block);
+			for (i=0;i<h;i++){
+				for (j=0;j<w;j++){
+					unsigned short tmp = ptr32[i*stride+j];
+					//fprintf(fp,"%04x ",tmp);
+					fprintf(fp,"%04d ",tmp);
+				}
+				fprintf(fp,"\n");
+			}
+			fflush(fp);
+			break;
+		case 3:
+			fprintf(fp,"%s %x\n",info,*ptr8);
+			fflush(fp);
+			break;
+		case 4:
+			if (*ptr8==1){
+				w	=	w;
+			}
+			block = *ptr8;
+			fprintf(fp,"%s %x\n",info,*ptr8);
+			fflush(fp);
+			break;
+		case 5:
+			if (*ptr32==1){
+				w	=	w;
+			}
+			mbnum = *ptr32;
+			fprintf(fp,"%s %x\n",info,*ptr32);
+			fflush(fp);
+			break;
+		case 6:
+			fprintf(fp,"%s %x %d %d\n",info,*ptr32,mbnum,block);
+			fflush(fp);
+			break;
+		case 7:
+			if (cabac_cnt==52){
+				cabac_cnt = cabac_cnt;
+			}
+			fprintf(fp,"%s %d %x\n",info,cabac_cnt,*ptr32);
+			cabac_cnt++;
+			fflush(fp);
+			break;
+		case 16:
+			fprintf(fp,"%s %d %d\n",info,mbnum,block);
+			for (i=0;i<h;i++){
+				for (j=0;j<w;j++){
+					unsigned short tmp = ptr16[i*stride+j];
+					fprintf(fp,"%04x ",tmp);
+				}
+				fprintf(fp,"\n");
+			}
+			fflush(fp);
+			break;
+		case 8:
+			fprintf(fp,"%s %d %d\n",info,mbnum,block);
+			for (i=0;i<h;i++){
+				for (j=0;j<w;j++){
+					unsigned char tmp = ptr8[i*stride+j];
+					//fprintf(fp,"%02x ",tmp);
+					fprintf(fp,"%d ",tmp);
+				}
+				fprintf(fp,"\n");
+			}
+			fflush(fp);
+			break;
+		case 0:
+			fclose(fp);
+			break;
+	}
+}
 //initialize stack
 static void Stackinit(SeqStack_t *s)
 {
@@ -44,7 +153,6 @@ static int Stackprint(SeqStack_t* s)
        do
        {
            Stackpop(s,&e);
-           yajie_print("stackprint x:%d,y:%d\n", e.curX,e.curY);
 
 
        }while(s->top);
@@ -754,7 +862,7 @@ void refineEdge(unsigned char* dst, unsigned char* pEr,int Er_stride, int16_t* p
    int y0 = roi->y0;
    int x1 = roi->x1;
    int y1 = roi->y1;
-   yajie_print(2,&x1,1,1,1,"roi x1 refineEdge");
+  // yajie_print(2,&x1,1,1,1,"roi x1 refineEdge");
    unsigned char* dsx, *Er,*la,*tg,ga;
 
    for ( int y = y0;y < y1; y++){
@@ -766,9 +874,9 @@ void refineEdge(unsigned char* dst, unsigned char* pEr,int Er_stride, int16_t* p
       for ( int x = x0;x < x1; x ++){
           if ( *(Er + x/4) != 0)
           {
-              yajie_print(8,(ga + x),20,1,1,"gaussian");   
-              yajie_print(16,(la + x),20,1,1,"laplacian gradient");   
-              yajie_print(16,(tg + x),20,1,1,"laplacian tg");   
+   //           yajie_print(8,(ga + x),20,1,1,"gaussian");   
+    //          yajie_print(16,(la + x),20,1,1,"laplacian gradient");   
+     //         yajie_print(16,(tg + x),20,1,1,"laplacian tg");   
           }      
       }
    }
@@ -1344,8 +1452,11 @@ void drawfacefill(unsigned char* faceMask ,unsigned char* pPixelUV,int width,int
     return;
 }
 
-// generate diff Mask as plane0^
-void genDiff( unsigned char* diffMask ,unsigned char* pIn,int out_stride, int out_w,int out_h )
+// generate bin diff Mask ;
+// when pixel > thr, corespond pixel in diff Mask set to 255
+// when pixel < thr, corespond pixel in diff Mask set to 0
+
+void genBinDiff( unsigned char* diffMask ,unsigned char* pIn,int out_stride, int out_w,int out_h,int thr )
 {
     unsigned char* in = NULL, *diff = NULL;
  
@@ -1355,7 +1466,7 @@ void genDiff( unsigned char* diffMask ,unsigned char* pIn,int out_stride, int ou
         diff = diffMask + j * out_stride ;
         for (int i = 0; i < out_w -1 ; i++)
         {
-           if( *( in + i) == 0)
+           if( *( in + i) >= 100)
                *(diff + i) = 255;
            else
                *(diff + i) = 0;

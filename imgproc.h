@@ -48,4 +48,5 @@ typedef struct stack
 		
 }SeqStack_t;
 
+void genBinDiff( unsigned char* diffMask ,unsigned char* pIn,int out_stride, int out_w,int out_h,int thr );
 void vrtualBG(unsigned char* dst,unsigned char* ori,unsigned char* bg,unsigned char* mask ,int stride, int width,int height,int step);

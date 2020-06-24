@@ -53,24 +53,36 @@ void main( int argc, char **argv )
     printf("%d\n",height );
 
     unsigned char *src_y = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH*sizeof(unsigned char ));
+    unsigned char *src_u = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH/4*sizeof(unsigned char ));
+    unsigned char *src_v = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH/4*sizeof(unsigned char ));
     unsigned char *dst_y = (unsigned char *) malloc(IMG_HEIGHT*IMG_WIDTH*sizeof(unsigned char ));
+
+    unsigned char *dst_u = src_u; 
+    unsigned char *dst_v = src_v;
+ 
     int luma_size =  width * height;
+    int chroma_size =  luma_size/4;
     FILE *Filein = fopen (argv[2], "rb");
-    FILE *Fileout = fopen (argv[3], "rb");
+    FILE *Fileout = fopen (argv[3], "wb");
     if (Fileout == NULL) printf ("Unable to open output sequence file!\n");
     if (Filein == NULL) printf ("Unable to open source sequence file!\n");
-
+    int thr = 100;
 // loop to process every frame
 
-    if( fread( src_y, 1, luma_size, Filein ) != luma_size )
-        break;
-    genDiff( dst_y , src_y , width, width, height );
+    if( fread( src_y, 1, luma_size, Filein ) != luma_size ) printf(" read src_y error");
+    if( fread( src_u, 1, chroma_size, Filein ) != chroma_size ) printf(" read src_y error");
+    if( fread( src_v, 1, chroma_size, Filein ) != chroma_size ) printf(" read src_y error");
+    genBinDiff( dst_y , src_y , width, width, height, thr );
     fwrite( dst_y, 1, luma_size, Fileout );
+    fwrite( dst_u, 1, chroma_size, Fileout );
+    fwrite( dst_v, 1, chroma_size, Fileout );
 
 //end loop
 //release ;clean
     fclose(Filein);
     fclose(Fileout);
     free( src_y );
+    free( src_u );
+    free( src_v );
     free( dst_y );
 }
