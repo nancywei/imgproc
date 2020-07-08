@@ -3,7 +3,7 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE    := mnnenc
-
+LOCAL_SRC_FILES := ./lib32/libmnn.so
 ifneq (,$(wildcard $(LOCAL_PATH)/$(LOCAL_SRC_FILES)))
 include $(PREBUILT_STATIC_LIBRARY) 
 endif 
@@ -14,7 +14,7 @@ include $(CLEAR_VARS)
 #
 # Module Settings
 #
-LOCAL_MODULE := mnnenc
+LOCAL_MODULE := mnnseg
 
 #
 # Source Files
