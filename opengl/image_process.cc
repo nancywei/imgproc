@@ -219,7 +219,22 @@ void ImageProcess::OnFilter(const char* config_path, int action_id, int start_ti
      //   auto ftype = 2 ;
 
         //  unsigned char* cha= "chahui";
+      /*  FaceDetection* face_detection;
+        std::vector<FaceDetectionReport*> face_detections;
+        face_detection->FaceDetector(face_detections);
+*/
         
+        int mask_width = 0;
+        int mask_height = 0;
+        int mask_channels = 0;
+    
+        unsigned char* mask_buffer =  stbi_load("/sdcard/data/mask.png", &mask_width, &mask_height, &mask_channels, STBI_rgb_alpha);
+
+        if (nullptr == mask_buffer) {
+            printf("load mask.png error!");
+            return;
+        }
+
         float* position = new float[sizeof(float) * 4];
         *position = 0.3;
         *(position + 1) = 0.3;
@@ -231,8 +246,12 @@ void ImageProcess::OnFilter(const char* config_path, int action_id, int start_ti
             if (result == filters_.end()) {
                 // 添加filter
                 Filter *filter = NULL;
-                if (strstr(lut_path,"chahui"))
+                if (strstr(lut_path,"chahui"))  //enlarge eye
                     filter = new Filter(lut_buffer, 720, 1280, 1);
+
+                else if (strstr(lut_path,"chengshi")){// 抠图
+                    filter = new Filter(mask_buffer, 720, 1280, 1, 1);
+                }
                 else
                     filter = new Filter(lut_buffer, 720, 1280);
                 filter->SetStartTime(start_time);
@@ -252,6 +271,7 @@ void ImageProcess::OnFilter(const char* config_path, int action_id, int start_ti
                 filter->UpdateLut(lut_buffer, 720, 1280);
             }
         }
+        stbi_image_free(mask_buffer);
         stbi_image_free(lut_buffer);
     }
     cJSON_Delete(json);

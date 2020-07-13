@@ -28,6 +28,25 @@
 
 namespace trinity {
 
+    static const char* MASK_FRAGMENT_SHADER = 
+            "#ifdef GL_ES                                                                                \n"
+            "precision highp float;                                                                      \n"
+            "varying highp vec2 textureCoordinate;                                                       \n"
+            "varying highp vec2 textureCoordinate2;                                                      \n"
+            "#else                                                                                       \n"
+            "varying vec2 textureCoordinate;                                                             \n"
+            "varying vec2 textureCoordinate2;                                                            \n"
+            "#endif                                                                                      \n"
+            "uniform sampler2D inputImageTexture;                                                        \n"
+            "uniform sampler2D inputImageTextureLookup;                                                  \n"
+            "void main () {                                                                              \n"
+            "vec4 textureColor2 = texture2D(inputImageTextureLookup, textureCoordinate);                 \n"
+            "vec4 textureColor1 = texture2D(inputImageTexture, textureCoordinate);                       \n"
+            "float mask = textureColor2.r;                                                               \n"
+            "if(mask == 0.0) gl_FragColor = textureColor2;                                                     \n"
+            "else gl_FragColor = textureColor1;                                                          \n"
+            "}\n";
+
     static const char* ENLARGE_FRAGMENT_SHADER =
             "#ifdef GL_ES                                                                                \n"
             "precision highp float;                                                                      \n"
@@ -169,7 +188,7 @@ namespace trinity {
 
 class NormalFilter : public FrameBuffer {
  public:
-        NormalFilter(uint8_t* filter_buffer, int width, int height ,const char *fragment ) : FrameBuffer(width, height, DEFAULT_VERTEX_SHADER,fragment) {
+        NormalFilter(uint8_t* filter_buffer, int width, int height ,const char *fragment ,int lut_w ) : FrameBuffer(width, height, DEFAULT_VERTEX_SHADER,fragment) {
         intensity_ = 1.0f;
         position_ = NULL;
         filter_texture_id_ = 0;
@@ -179,7 +198,7 @@ class NormalFilter : public FrameBuffer {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, filter_buffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lut_w, lut_w, 0, GL_RGBA, GL_UNSIGNED_BYTE, filter_buffer);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
@@ -188,6 +207,7 @@ class NormalFilter : public FrameBuffer {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, lut);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
+
 
     void SetIntensity(float intensity = 1.0f) {
         intensity_ = intensity;
@@ -231,11 +251,11 @@ class NormalFilter : public FrameBuffer {
 
 class Filter : public NormalFilter {
  public:
-    Filter(uint8_t* filter_buffer,int width, int height, float* position) : NormalFilter( filter_buffer, width, height,ENLARGE_FRAGMENT_SHADER) {}
+    Filter(uint8_t* filter_buffer,int width, int height, int position, int type) : NormalFilter( filter_buffer, width, height,MASK_FRAGMENT_SHADER, 512) {}
 
-    Filter(uint8_t* filter_buffer, int width, int height, int ftype) : NormalFilter( filter_buffer, width, height, ENLARGE_FRAGMENT_SHADER) {}
+    Filter(uint8_t* filter_buffer, int width, int height, int ftype) : NormalFilter( filter_buffer, width, height, ENLARGE_FRAGMENT_SHADER, 512) {}
 
-    Filter(uint8_t* filter_buffer, int width, int height) : NormalFilter( filter_buffer, width, height, FILTER_FRAGMENT_SHADER ) {}
+    Filter(uint8_t* filter_buffer, int width, int height) : NormalFilter( filter_buffer, width, height, FILTER_FRAGMENT_SHADER, 512 ) {}
 
 };
 
