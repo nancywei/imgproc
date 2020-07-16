@@ -26,9 +26,22 @@
 #include "frame_buffer.h"
 #include "gl.h"
 
+#include <stdio.h>
+#include <ImageProcess.hpp>
+#define MNN_OPEN_TIME_TRACE
+#include <algorithm>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <sstream>
+#include <vector>
+#include <expr/Expr.hpp>
+#include <expr/ExprCreator.hpp>
+#include <AutoTime.hpp>
+
 namespace trinity {
 
-    static const char* MASK_FRAGMENT_SHADER = 
+    static const char* MASK_FRAGMENT_SHADER =
             "#ifdef GL_ES                                                                                \n"
             "precision highp float;                                                                      \n"
             "varying highp vec2 textureCoordinate;                                                       \n"
@@ -45,6 +58,51 @@ namespace trinity {
             "float mask = textureColor2.r;                                                               \n"
             "if(mask == 0.0) gl_FragColor = textureColor2;                                                     \n"
             "else gl_FragColor = textureColor1;                                                          \n"
+            "}\n";
+    
+// ratio is camera_height/camera_with; tlx ,tly is target keypoint of right face keypoint 8;
+   static const char* SLIM_FRAGMENT_SHADER =
+            "#ifdef GL_ES                                                                                \n"
+            "precision highp float;                                                                      \n"
+            "varying highp vec2 textureCoordinate;                                                       \n"
+            "varying highp vec2 textureCoordinate2;                                                      \n"
+            "#else                                                                                       \n"
+            "varying vec2 textureCoordinate;                                                             \n"
+            "varying vec2 textureCoordinate2;                                                            \n"
+            "#endif                                                                                      \n"
+            "uniform sampler2D inputImageTexture;                                                        \n"
+            "uniform sampler2D inputImageTextureLookup;                                                  \n"
+            "uniform float Rx;                                                                    \n"
+            "uniform float Ry;                                                                          \n"
+            "uniform float ratio;                                                                          \n"
+            "uniform float tlx;                                                                          \n"
+            "uniform float tly;                                                                          \n"
+            "uniform float plx;                                                                          \n"
+            "uniform float ply;                                                                          \n"
+            "uniform float rlx;                                                                          \n"
+            "uniform float rly;                                                                          \n"
+            "void main () {                                                                              \n"
+            "vec2 textureCoordinateToUse = textureCoordinate;                                            \n"
+            "if(plx > 0.){                                                                               \n"
+            "vec2 originPoint = vec2( plx, ply );                                                        \n"
+            "vec2 targetPoint = vec2( plx + 0.05, ply + 0.05 );                                                        \n"
+            "vec2 RPoint = vec2( plx + 0.1, ply + 0.1 );                                                        \n"
+            //         "vec2 targetPoint = vec2( plx + (Rx - plx)/5.0, ply + (Ry - ply)/5.0 );                      \n"
+   //         "vec2 targetPoint = vec2(tlx , tly );\n"
+   //         "vec2 RPoint = vec2( rlx , rly );                                                               \n"
+            "float dv = distance(vec2(originPoint.x,originPoint.y), vec2(targetPoint.x,targetPoint.y));  \n"
+            "float R = distance(vec2(originPoint.x,originPoint.y),vec2(RPoint.x,RPoint.y));                                                     \n"
+            "float d = distance(vec2(textureCoordinate.x, textureCoordinate.y), vec2(originPoint.x, originPoint.y));\n"
+            "if( d < R ){\n"
+            "float weight = (R - d)/(R - d + dv) ;                                                             \n"
+            "weight = weight * weight;                                                                   \n"
+            "weight = clamp(weight, 0.0, 1.0);                                                           \n"
+            "vec2 Vxy =  originPoint - targetPoint;                             \n"
+            "textureCoordinateToUse = textureCoordinate + Vxy * weight;          \n"
+            
+            "}                                                                                           \n"
+            "} \n"
+            "gl_FragColor=texture2D(inputImageTexture, textureCoordinateToUse);                          \n"
             "}\n";
 
     static const char* ENLARGE_FRAGMENT_SHADER =
@@ -67,14 +125,16 @@ namespace trinity {
             "vec2 textureCoordinateToUse = textureCoordinate;                                            \n"
             "float aspectRatio = 1.0;                                                                    \n"
             "float delta = 0.5;   "
-            "vec2 originPoint = vec2( plx, ply );                                                \n"
-            "vec2 targetPoint = vec2( plx + 0.1, ply + 0.1 );                                                \n"
+            "if(plx > 0.){                                                                               \n"
+            "vec2 originPoint = vec2( plx, ply );                                                        \n"
+            "vec2 targetPoint = vec2( plx + 0.1, ply + 0.1 );                                            \n"
             "float radius = distance(vec2(targetPoint.x, targetPoint. y / aspectRatio),vec2(originPoint.x, originPoint.y / aspectRatio));\n"
           //  "radius = radius * 5.;                                                                       \n"
             "float weight = distance(vec2(textureCoordinate.x, textureCoordinate.y / aspectRatio), vec2(originPoint.x, originPoint.y / aspectRatio)) / radius;\n"
             "weight = 1.0 - (1.0 - weight * weight) * delta ;                                          \n"
             "weight = clamp(weight, 0.0, 1.0);                                                           \n"
             "textureCoordinateToUse = originPoint + (textureCoordinate - originPoint) * weight;          \n"
+            "}                                                                                           \n"
             "gl_FragColor=texture2D(inputImageTexture, textureCoordinateToUse);                          \n"
             "}\n";
 
@@ -188,9 +248,10 @@ namespace trinity {
 
 class NormalFilter : public FrameBuffer {
  public:
-        NormalFilter(uint8_t* filter_buffer, int width, int height ,const char *fragment ,int lut_w ) : FrameBuffer(width, height, DEFAULT_VERTEX_SHADER,fragment) {
+        NormalFilter(uint8_t* filter_buffer, int width, int height ,const char *fragment ) : FrameBuffer(width, height, DEFAULT_VERTEX_SHADER,fragment) {
         intensity_ = 1.0f;
         position_ = NULL;
+        
         filter_texture_id_ = 0;
         glGenTextures(1, &filter_texture_id_);
         glBindTexture(GL_TEXTURE_2D, filter_texture_id_);
@@ -198,7 +259,7 @@ class NormalFilter : public FrameBuffer {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, lut_w, lut_w, 0, GL_RGBA, GL_UNSIGNED_BYTE, filter_buffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, filter_buffer);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
@@ -208,7 +269,6 @@ class NormalFilter : public FrameBuffer {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-
     void SetIntensity(float intensity = 1.0f) {
         intensity_ = intensity;
     }
@@ -217,6 +277,8 @@ class NormalFilter : public FrameBuffer {
         position_ = position;
         plx_ = * position;
         ply_ = * (position + 1);
+        Rx_ = * (position + 2);
+        Ry_ = * (position + 3);
 
     }
 
@@ -231,8 +293,10 @@ class NormalFilter : public FrameBuffer {
     GLuint filter_texture_id_;
     float intensity_;
     float *position_;
-    float plx_;
-    float ply_ ;
+    float plx_ = 0.;
+    float ply_ = 0.;
+    float Rx_ = 0.;
+    float Ry_ = 0.;
 
  protected:
     virtual void RunOnDrawTasks() {
@@ -243,6 +307,8 @@ class NormalFilter : public FrameBuffer {
         if (position_){
             SetFloat("plx", plx_);
             SetFloat("ply", ply_);
+            SetFloat("Rx", Rx_);
+            SetFloat("Ry", Ry_);
 
         }
     }
@@ -251,11 +317,11 @@ class NormalFilter : public FrameBuffer {
 
 class Filter : public NormalFilter {
  public:
-    Filter(uint8_t* filter_buffer,int width, int height, int position, int type) : NormalFilter( filter_buffer, width, height,MASK_FRAGMENT_SHADER, 512) {}
+    Filter(uint8_t* filter_buffer,int width, int height, float* position) : NormalFilter( filter_buffer, width, height,ENLARGE_FRAGMENT_SHADER) {}
 
-    Filter(uint8_t* filter_buffer, int width, int height, int ftype) : NormalFilter( filter_buffer, width, height, ENLARGE_FRAGMENT_SHADER, 512) {}
+    Filter(uint8_t* filter_buffer, int width, int height, int ftype) : NormalFilter( filter_buffer, width, height, SLIM_FRAGMENT_SHADER) {}
 
-    Filter(uint8_t* filter_buffer, int width, int height) : NormalFilter( filter_buffer, width, height, FILTER_FRAGMENT_SHADER, 512 ) {}
+    Filter(uint8_t* filter_buffer, int width, int height) : NormalFilter( filter_buffer, width, height, FILTER_FRAGMENT_SHADER ) {}
 
 };
 
