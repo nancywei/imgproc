@@ -73,17 +73,49 @@ int Inference_engine::load_param(std::string & file, int num_thread)
     return 0;
 }
 
-int Inference_engine::set_params(int srcType, int dstType, 
-                                 float *mean, float *scale)
+int Inference_engine::set_params(int srcType, int dstType,
+                                 float *mean, float *normals)
 {
-    config.destFormat   = (MNN::CV::ImageFormat)dstType;
+   /* config.destFormat   = (MNN::CV::ImageFormat)dstType;
     config.sourceFormat = (MNN::CV::ImageFormat)srcType;
 
     ::memcpy(config.mean,   mean,   3 * sizeof(float));
     ::memcpy(config.normal, scale,  3 * sizeof(float));
 
     config.filterType = (MNN::CV::Filter)(1);
-    config.wrap = (MNN::CV::Wrap)(2);
+    config.wrap = (MNN::CV::Wrap)(2);*/
+    config.filterType = MNN::CV::NEAREST;
+    //        float mean[3]     = {103.94f, 116.78f, 123.68f};
+    //        float normals[3] = {0.017f, 0.017f, 0.017f};
+    //mean[3]     = {127.5f, 127.5f, 127.5f};
+    //float normals[3] = {0.00785f, 0.00785f, 0.00785f};
+    ::memcpy(config.mean, mean, sizeof(mean));
+    ::memcpy(config.normal, normals, sizeof(normals));
+    config.sourceFormat = MNN::CV::RGBA;
+    config.destFormat   = MNN::CV::RGB;
+
+    tensorPtr = netPtr->getSessionInput(sessionPtr, nullptr);
+    tensorOutPtr = netPtr->getSessionOutput(sessionPtr, nullptr);
+    nhwcTensor = new MNN::Tensor(tensorOutPtr, MNN::Tensor::TENSORFLOW);
+
+    int dstw = 257;
+    int dsth = 257;
+    int c = 3;
+    bool auto_resize = false;
+    if ( !auto_resize )
+    {
+        std::vector<int>dims = { 1, c, dsth, dstw };
+        netPtr->resizeTensor(tensorPtr, dims);
+        netPtr->resizeSession(sessionPtr);
+    }
+    config.filterType = MNN::CV::NEAREST;
+    float mean1[3]     = {127.5f, 127.5f, 127.5f};
+    float normals1[3] = {0.00785f, 0.00785f, 0.00785f};
+    ::memcpy(config.mean, mean1, sizeof(mean1));
+    ::memcpy(config.normal, normals1, sizeof(normals1));
+    config.sourceFormat = MNN::CV::RGBA;
+    config.destFormat   = MNN::CV::RGB;
+    process = MNN::CV::ImageProcess::create(config);
 
     return 0;
 }
@@ -92,110 +124,43 @@ int Inference_engine::set_params(int srcType, int dstType,
 //int Inference_engine::infer_img(unsigned char *data, int width, int height, int channel, int dstw, int dsth, Inference_engine_tensor& out)
 int Inference_engine::infer_img(unsigned char *data, int width, int height, int channel, int dstw, int dsth, unsigned char* output_pixels)
 {
-    MNN::Tensor* tensorPtr = netPtr->getSessionInput(sessionPtr, nullptr);
-    MNN::CV::Matrix transform;
 
     int h = height;
     int w = width;
-    int c = channel;
-    int size_w = dstw;
-    int size_h = dsth;
-    // auto resize for full conv network.
-    bool auto_resize = false;
-    if ( !auto_resize )
-    {
-        std::vector<int>dims = { 1, c, dsth, dstw };
-        netPtr->resizeTensor(tensorPtr, dims);
-        netPtr->resizeSession(sessionPtr);
-    }
-
-   // transform.postScale(1.0f/dstw, 1.0f/dsth);
-  //  transform.postScale(w, h);
-
-       config.filterType = MNN::CV::BILINEAR;
-        //        float mean[3]     = {103.94f, 116.78f, 123.68f};
-        //        float normals[3] = {0.017f, 0.017f, 0.017f};
-        float mean[3]     = {127.5f, 127.5f, 127.5f};
-        float normals[3] = {0.00785f, 0.00785f, 0.00785f};
-        ::memcpy(config.mean, mean, sizeof(mean));
-        ::memcpy(config.normal, normals, sizeof(normals));
-        config.sourceFormat = MNN::CV::RGBA;
-        config.destFormat   = MNN::CV::RGB;
-
-
-    transform.setScale((float)(width-1) / (dstw-1), (float)(height-1) / (dsth-1));
-    std::unique_ptr<MNN::CV::ImageProcess> process(MNN::CV::ImageProcess::create(config));
+    transform.setScale(1.0 / (width - 1.0), 1.0 / (height - 1.0));
+    transform.postRotate(90, 0.5, 0.5);
+    transform.postScale( (width - 1.0), (height - 1.0));
 
     process->setMatrix(transform);
-  //  process->convert((uint8_t*)data, width, height, 0, tensorPtr, size_w, size_h, 4, 0, halide_type_of<float>());
-      
+
     process->convert(data, w, h, w*4, tensorPtr);
     netPtr->runSession(sessionPtr);
-#if 0
-    for (int i = 0; i < out.layer_name.size(); i++)
-    {
-        const char* layer_name = NULL;
-        if( strcmp(out.layer_name[i].c_str(), "") != 0)
-        {
-            layer_name = out.layer_name[i].c_str();
-        }
-#endif
-       const char* layer_name = NULL;
-       
-        MNN::Tensor* tensorOutPtr = netPtr->getSessionOutput(sessionPtr, layer_name);
+
 
         std::vector<int> shape = tensorOutPtr->shape();
 
-        auto tensor = reinterpret_cast<MNN::Tensor*>(tensorOutPtr);
 
-        std::unique_ptr<MNN::Tensor> hostTensor(new MNN::Tensor(tensor, tensor->getDimensionType(), true));     
-        auto size = tensorOutPtr->elementSize();
- //       printf("dest element size %d\n",size);
-
-
-        tensor->copyToHostTensor(hostTensor.get());
-        tensor = hostTensor.get();
-
-        auto nhwcTensor = new MNN::Tensor(tensorOutPtr, MNN::Tensor::TENSORFLOW);
+//        auto nhwcTensor = new MNN::Tensor(tensorOutPtr, MNN::Tensor::TENSORFLOW);
         tensorOutPtr->copyToHostTensor(nhwcTensor);
-        auto score = nhwcTensor->host<float>();
-        //auto index = nhwcTensor->host<float>();
-   /*   for ( int j = 0; j < 257; j++){
-        float * s= score + j * 257 * 21;
-        for ( int i = 0;i < 257;i++){
-            printf("num %d: %0.4f ;\n",i, *(s + 21 * i ));
-        }
-   }*/ 
-       // std::shared_ptr<float> destPtr(new float[size * sizeof(float)]);
 
-      //  ::memcpy(destPtr.get(), tensorOutPtr->host<float>(), size * sizeof(float));
+        int ch = 21;
 
-    //    auto output = _Convert(tensorOutPtr, MNN::Express::NHWC);
-        //output = _Softmax(output, -1);
-  /*      auto outputInfo = output->getInfo();
-        auto width = outputInfo->dim[2];
-        auto height = outputInfo->dim[1];
-        auto channel = outputInfo->dim[3];
-    */
-       int ch = 21;
-        std::shared_ptr<MNN::Tensor> wrapTensor(MNN::CV::ImageProcess::createImageTensor<uint8_t>(width, height, 4, nullptr));
-//        MNN_PRINT("Mask: w=%d, h=%d, index=%d\n", width, height, index);
         auto outputHostPtr = nhwcTensor->host<float>();
-        int ch2 = 22; // ch + 1 for caculate sourceX[0];
+
         int total = height * width;
-        memset(wrapTensor->host<uint8_t>(),0,(total<<2) * sizeof(uint8_t));
+
+        uint8_t* wrap = ( uint8_t* )malloc( total * 4 * sizeof(uint8_t));
+        memset(wrap,0,(total<<2) * sizeof(uint8_t));
 
         for (int i = 0; i < total; ++i) {
 
             float* sourceX =  outputHostPtr + ch * i;
-            uint8_t* rgba = wrapTensor->host<uint8_t>() + 4 * i;
+    //        uint8_t* rgba = wrapTensor->host<uint8_t>() + 4 * i;
+            uint8_t* rgba = wrap + 4 * i;
             int index = 15;
 
-            if (sourceX[0] >= sourceX[15]) {
-                rgba[0] = 0;
-            }
-            else{
-
+            if (sourceX[0] < sourceX[15]) {
+      
                 float maxValue = sourceX[15];
                 for (int c=1; c<ch && c!=15; ++c) {
                     if (sourceX[c] > maxValue) {
@@ -210,46 +175,11 @@ int Inference_engine::infer_img(unsigned char *data, int width, int height, int 
             }
 
         }
-#if 0
-        for (int y = 0; y < height; ++y) {
-            auto rgbaY = wrapTensor->host<uint8_t>() + 4 * y * width;
-            auto sourceY =  outputHostPtr + y * width * ch;
-            for (int x=0; x<width; ++x) {
-                auto sourceX = sourceY + ch * x;
-                int index = 0;
-                float maxValue = sourceX[0];
-                auto rgba = rgbaY + 4 * x;
-                for (int c=1; c<ch; ++c) {
-                    if (sourceX[c] > maxValue) {
-                        index = c;
-                        maxValue = sourceX[c];
-                    }
-                }
-                rgba[0] = 0;
-                rgba[2] = 0;
-                rgba[1] = 0;
-                rgba[3] = 255;
-                if (15 == index) {
-                    rgba[0] = 255;
-                    rgba[1] = 255;
-                    rgba[2] = 255;
-                    rgba[3] = 0;
-                }
-            }
-        }
-#endif
-   //     unsigned char * out = output_pixels;
-   //     for (int j = 0 ;j < dsth; j ++ ){
-   //         out = output_pixels + j * dstw * 4;
-            memcpy(output_pixels,wrapTensor->host<uint8_t>(),4 * dstw * dsth * sizeof(uint8_t));
-     //   }
- //       stbi_write_png("./output.png", dstw, dsth, 4, wrapTensor->host<uint8_t>(), 4 * dstw);
-//        output->unMap();
-#if 0
 
-        out.out_feat.push_back(destPtr);
-    }
-#endif
+
+    memcpy(output_pixels,wrap,4 * dstw * dsth * sizeof(uint8_t));
+    free(wrap);
+
 
     return 0;
 }

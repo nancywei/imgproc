@@ -49,6 +49,13 @@ private:
     MNN::Interpreter* netPtr;
 	MNN::Session* sessionPtr;
     MNN::CV::ImageProcess::Config config;
+    MNN::Tensor* tensorPtr ;  //= netPtr->getSessionInput(sessionPtr, nullptr);
+    MNN::Tensor* tensorOutPtr;// = netPtr->getSessionOutput(sessionPtr, nullptr);
+    MNN::CV::ImageProcess* process;//(MNN::CV::ImageProcess::create(config));
+    MNN::CV::Matrix transform;
+
+    MNN::Tensor* nhwcTensor;
+    // std::shared_ptr<MNN::Tensor> wrapTensor(MNN::CV::ImageProcess::createImageTensor<uint8_t>(1280, 720, 4, nullptr));
 
 };
 #endif
